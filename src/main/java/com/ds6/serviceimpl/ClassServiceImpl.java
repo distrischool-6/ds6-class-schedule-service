@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,11 +19,13 @@ import com.ds6.service.ClassService;
 
 import lombok.RequiredArgsConstructor;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ClassServiceImpl implements ClassService {
 
     private final SchoolClassRepository classRepository;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     @Override
     @Transactional
@@ -67,6 +71,9 @@ public class ClassServiceImpl implements ClassService {
         schoolClass.getStudentIds().add(dto.studentId());
         
         SchoolClass updatedClass = classRepository.save(schoolClass);
+
+        publishScheduleUpdatedEvent(updatedClass.getId());
+
         return toDTO(updatedClass);
     }
 
@@ -76,6 +83,8 @@ public class ClassServiceImpl implements ClassService {
         SchoolClass schoolClass = findClassById(classId);
         schoolClass.getStudentIds().remove(studentId);
         classRepository.save(schoolClass);
+
+        publishScheduleUpdatedEvent(schoolClass.getId());
     }
 
     // --- Métodos utilitários ---
@@ -92,5 +101,17 @@ public class ClassServiceImpl implements ClassService {
             schoolClass.getTeacherId(),
             schoolClass.getStudentIds()
         );
+    }
+
+    private void publishScheduleUpdatedEvent(UUID classId) {
+        try {
+            String topic = "schedule.updated";
+            String payload = classId.toString();
+
+            kafkaTemplate.send(topic, payload);
+            log.info("Event 'schedule.updated' published for class ID: {}", payload);
+        } catch (Exception e) {
+            log.error("Failed to publish 'schedule.updated' event for class ID: {}. Error: {}", classId, e.getMessage());
+        }
     }
 }
